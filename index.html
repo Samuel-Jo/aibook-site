@@ -1349,35 +1349,29 @@
     }
     qrInput.addEventListener('input', () => generateQR(qrInput.value));
 
-    /* ===== 축하 메시지 방명록 ===== */
-    const STORAGE_KEY = 'ai_book_guestbook';
-
-    function loadMessages() {
-      try { return JSON.parse(localStorage.getItem(STORAGE_KEY)) || []; }
-      catch(e) { return []; }
-    }
-
-    function saveMessages(msgs) {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(msgs));
-    }
+    /* ===== 축하 메시지 방명록 — Cloudflare KV 서버 저장 ===== */
+    const API = 'https://aibook-api.aiautou.workers.dev';
 
     function formatTime(iso) {
       const d = new Date(iso);
       return `${d.getMonth()+1}/${d.getDate()} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
     }
 
-    function renderMessages() {
+    function escapeHtml(str) {
+      return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    }
+
+    function renderMessages(msgs) {
       const list = document.getElementById('gb-list');
-      const msgs = loadMessages();
-      if (msgs.length === 0) {
+      if (!msgs || msgs.length === 0) {
         list.innerHTML = '<div class="gb-empty">아직 메시지가 없습니다. 첫 번째로 남겨보세요! 🌱</div>';
         return;
       }
-      list.innerHTML = msgs.slice().reverse().map((m, idx) => `
+      list.innerHTML = msgs.slice().reverse().map(m => `
         <div class="gb-msg-card">
-          <button class="gb-msg-del" onclick="deleteMessage(${msgs.length - 1 - idx})" title="삭제">✕</button>
+          <button class="gb-msg-del" onclick="deleteMessage('${escapeHtml(m.id)}')" title="삭제">✕</button>
           <div class="gb-msg-header">
-            <div class="gb-msg-avatar">${m.name.charAt(0)}</div>
+            <div class="gb-msg-avatar">${escapeHtml(m.name.charAt(0))}</div>
             <span class="gb-msg-name">${escapeHtml(m.name)}${m.relation ? ' · <span style="font-weight:400;color:var(--text-muted)">' + escapeHtml(m.relation) + '</span>' : ''}</span>
             <span class="gb-msg-time">${formatTime(m.time)}</span>
           </div>
@@ -1386,32 +1380,54 @@
       `).join('');
     }
 
-    function escapeHtml(str) {
-      return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    async function loadMessages() {
+      try {
+        const res = await fetch(`${API}/messages`);
+        const msgs = await res.json();
+        renderMessages(msgs);
+      } catch(e) {
+        document.getElementById('gb-list').innerHTML =
+          '<div class="gb-empty">메시지를 불러오는 중 오류가 발생했습니다.</div>';
+      }
     }
 
-    function submitMessage() {
+    async function submitMessage() {
+      const btn     = document.querySelector('.gb-submit');
       const name    = document.getElementById('gb-name').value.trim();
       const relation= document.getElementById('gb-relation').value.trim();
       const message = document.getElementById('gb-message').value.trim();
-      if (!name) { alert('이름을 입력해 주세요.'); return; }
+      if (!name)    { alert('이름을 입력해 주세요.'); return; }
       if (!message) { alert('메시지를 입력해 주세요.'); return; }
-      const msgs = loadMessages();
-      msgs.push({ name, relation, message, time: new Date().toISOString() });
-      saveMessages(msgs);
-      document.getElementById('gb-name').value = '';
-      document.getElementById('gb-relation').value = '';
-      document.getElementById('gb-message').value = '';
-      renderMessages();
-      document.getElementById('gb-list').scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+      btn.textContent = '저장 중…';
+      btn.disabled = true;
+      try {
+        await fetch(`${API}/messages`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name, relation, message }),
+        });
+        document.getElementById('gb-name').value = '';
+        document.getElementById('gb-relation').value = '';
+        document.getElementById('gb-message').value = '';
+        await loadMessages();
+        document.getElementById('gb-list').scrollIntoView({ behavior: 'smooth', block: 'start' });
+      } catch(e) {
+        alert('메시지 저장 중 오류가 발생했습니다. 다시 시도해 주세요.');
+      } finally {
+        btn.textContent = '메시지 남기기 →';
+        btn.disabled = false;
+      }
     }
 
-    function deleteMessage(idx) {
+    async function deleteMessage(id) {
       if (!confirm('이 메시지를 삭제하시겠습니까?')) return;
-      const msgs = loadMessages();
-      msgs.splice(idx, 1);
-      saveMessages(msgs);
-      renderMessages();
+      try {
+        await fetch(`${API}/messages?id=${encodeURIComponent(id)}`, { method: 'DELETE' });
+        await loadMessages();
+      } catch(e) {
+        alert('삭제 중 오류가 발생했습니다.');
+      }
     }
 
     // 엔터키로 제출 (Shift+Enter는 줄바꿈)
@@ -1419,7 +1435,9 @@
       if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submitMessage(); }
     });
 
-    renderMessages();
+    // 최초 로드 + 30초마다 자동 갱신 (발표 화면에서 새 메시지 자동 표시)
+    loadMessages();
+    setInterval(loadMessages, 30000);
   </script>
 
 </body>
