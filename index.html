@@ -1236,7 +1236,7 @@
         </div>
 
         <div class="qr-box fade-up" style="transition-delay:0.1s">
-          <div class="qr-label">📲 이 페이지 QR코드</div>
+          <div class="qr-label">📲 응원 메시지 남기기</div>
           <div id="qr-canvas" style="margin: 16px 0;"></div>
           <input
             class="qr-url-input"
@@ -1246,7 +1246,7 @@
             value=""
           />
           <div class="qr-desc">
-            참석자들이 스캔하면 이 페이지로 이동합니다.
+            QR코드를 스캔하면 응원 메시지를 바로 남길 수 있습니다.
           </div>
         </div>
 
@@ -1333,10 +1333,11 @@
     }
 
     const qrInput = document.getElementById('qr-url');
-    // 현재 페이지 URL이 http(s)이면 자동 설정
+    // 방명록 섹션으로 직접 연결
     if (location.protocol.startsWith('http')) {
-      qrInput.value = location.href;
-      generateQR(location.href);
+      const guestbookUrl = location.origin + location.pathname + '#guestbook';
+      qrInput.value = guestbookUrl;
+      generateQR(guestbookUrl);
     }
     qrInput.addEventListener('input', () => generateQR(qrInput.value));
 
